@@ -1,13 +1,44 @@
 #include <iostream>
 #include <string>
 #include <algorithm>
+#include <unordered_set>
 #include "lodepng.h"
 
-constexpr unsigned PixelSize = 4; // In bytes
-
+using Pixel = std::uint32_t; // RGBA
+constexpr unsigned PixelSize = sizeof(Pixel);
 using ImageData = std::vector<unsigned char>; // We assume it is in RGBA format
 using ImageIt = ImageData::const_iterator;
 
+
+std::unordered_set<Pixel> extractedPlainTilesColors; // A plain tile is a monochrome one. We only are going to extract one of each color
+
+Pixel getPixel(ImageIt it)
+{
+    const std::uint32_t r = *(it + 0);
+    const std::uint32_t g = *(it + 1);
+    const std::uint32_t b = *(it + 2);
+    const std::uint32_t a = *(it + 3);
+    return r << 24 | g << 16 | b << 8 | a;
+}
+
+bool isPlainTile(ImageIt tileBeginIt, unsigned tileWidth, unsigned tileHeight, unsigned imageWidth)
+{
+    const auto firstPixel = getPixel(tileBeginIt);
+
+    for(unsigned y = 0; y < tileHeight; ++ y)
+    {
+        for(unsigned x = 0; x < tileWidth; ++ x)
+        {
+            const auto it = tileBeginIt + (imageWidth * y + x) * PixelSize;
+            if(firstPixel != getPixel(it))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
 
 void saveTile(const std::string& fileName, ImageIt tileBeginIt, unsigned tileWidth, unsigned tileHeight, unsigned imageWidth)
 {
@@ -65,10 +96,26 @@ int main(int argc, char *argv[])
         for(unsigned tileX = 0; tileX < horizontalTiles; ++ tileX)
         {
             const int tileId = horizontalTiles * tileY + tileX;
-            const auto tileFileName = "tile" + std::to_string(tileId) + ".png";
             const auto tileBeginIt = image.cbegin() + ((tileY * tileHeight) * imageWidth + (tileX * tileWidth)) * PixelSize;
 
+            std::cout << "Processing tile " << tileId << "... ";
+
+            if(isPlainTile(tileBeginIt, tileWidth, tileHeight, imageWidth))
+            {
+                const auto firstPixel = getPixel(tileBeginIt);
+                if(extractedPlainTilesColors.find(firstPixel) != extractedPlainTilesColors.end())
+                {
+                    std::cout << "Already extracted plain tile, skipped\n";
+                    continue;
+                }
+                extractedPlainTilesColors.insert(firstPixel);
+            }
+
+            const auto tileFileName = "tile" + std::to_string(tileId) + ".png";
+
             saveTile(tileFileName, tileBeginIt, tileWidth, tileHeight, imageWidth);
+
+            std::cout << tileFileName << " saved\n";
         }
     }
 
